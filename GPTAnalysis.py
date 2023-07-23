@@ -9,17 +9,26 @@ import nltk
 nltk.download('vader_lexicon')
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from textblob import TextBlob
+from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.feature_extraction.text import CountVectorizer
 
-
+# Set your path here
+path = 'U:\\DataBase\\Chatgpt convo\\'  # You can change this path accordingly
 
 # Load the stop words
 stop_words = set(stopwords.words('english'))
 
 # Load the data
-df = pd.read_json('U:\\DataBase\\Chatgpt convo\\conversations.json')
+df = pd.read_json(os.path.join(path, 'conversations.json'))
 
-# Perform data sorting
-df_sorted = df.sort_values(by='create_time')
+# Convert the 'create_time' column to datetime
+df['create_time'] = pd.to_datetime(df['create_time'])
+
+# Set the 'create_time' column as the index
+df.set_index('create_time', inplace=True)
+
+# Sort the data by the index
+df_sorted = df.sort_index()
 
 # Fill the null values in 'title' column with an empty string
 df_sorted['title'].fillna('', inplace=True)
@@ -38,16 +47,13 @@ least_common_words = word_counter.most_common()[:-11:-1]
 num_unique_words = len(set(words))
 
 # Extract hour, day and month from create_time and update_time
-df_sorted['create_hour'] = df_sorted['create_time'].dt.hour
-df_sorted['create_day'] = df_sorted['create_time'].dt.dayofweek
-df_sorted['create_month'] = df_sorted['create_time'].dt.month
-
-df_sorted['update_hour'] = df_sorted['update_time'].dt.hour
-df_sorted['update_day'] = df_sorted['update_time'].dt.dayofweek
-df_sorted['update_month'] = df_sorted['update_time'].dt.month
+df_sorted['create_hour'] = df_sorted.index.hour
+df_sorted['create_day'] = df_sorted.index.dayofweek
+df_sorted['create_month'] = df_sorted.index.month
 
 # Calculate conversation length
-df_sorted['conversation_length'] = (df_sorted['update_time'] - df_sorted['create_time']).dt.total_seconds()
+df_sorted['conversation_length'] = (df_sorted['update_time'] - df_sorted.index).dt.total_seconds()
+
 
 # Count the total number of conversations
 num_conversations = df.shape[0]
@@ -73,7 +79,6 @@ most_common_ending_word = Counter(ending_words).most_common(1)[0][0]
 sia = SentimentIntensityAnalyzer()
 df_sorted['sentiment'] = df_sorted['title'].apply(lambda x: sia.polarity_scores(x))
 df_sorted['sentiment_score'] = df_sorted['sentiment'].apply(lambda x: x['compound'])
-df_sorted.set_index('create_time', inplace=True)
 
 
 # Create a DataFrame for the summary statistics
@@ -91,9 +96,11 @@ summary_stats = pd.DataFrame({
     'Number of Unique Words': [num_unique_words]
 })
 
-
 # Save the summary statistics to a CSV file
-summary_stats.to_csv('U:\\DataBase\\Chatgpt convo\\summary_stats.csv', index=False)
+summary_stats.to_csv(os.path.join(path, 'summary_stats.csv'), index=False)
+
+# Just before creating plots that require the 'create_time' field, make sure it's still the index:
+assert df_sorted.index.name == 'create_time', "The index should be 'create_time'"
 
 # Sentiment Analysis Plot
 df_sorted['sentiment_score'] = df_sorted['sentiment'].apply(lambda x: x['compound'])
@@ -102,7 +109,7 @@ sns.histplot(df_sorted['sentiment_score'], bins=20, kde=True)
 plt.title('Distribution of Sentiment Scores')
 plt.xlabel('Sentiment Score')
 plt.ylabel('Frequency')
-plt.savefig('U:\\DataBase\\Chatgpt convo\\sentiment_distribution.png')
+plt.savefig(os.path.join(path, 'Distribution of Sentiment Scores.png'))
 plt.clf()
 
 # Topic Modeling
@@ -147,21 +154,21 @@ plt.title('Dominant Topics Over Time')
 plt.xlabel('Time')
 plt.ylabel('Dominant Topic')
 plt.legend(title='Dominant Topic', labels=[f'Topic {i}' for i in range(n_topics)])
-plt.savefig('U:\\DataBase\\Chatgpt convo\\dominant_topics_over_time_filled.png')
+plt.savefig(os.path.join(path, 'Dominant Topics Over Time.png'))
 plt.clf()
 
 df_sorted['sentiment_score'].plot(kind='line')
 plt.title('Sentiment Over Time')
 plt.xlabel('Time')
-plt.ylabel('Sentiment')
-plt.savefig('U:\\DataBase\\Chatgpt convo\\sentiment_over_time_line_chart.png')
+plt.savefig(os.path.join(path, 'Sentiment Over Time.png'))
+plt.clf()
 
 df_sorted.groupby(df_sorted.index.dayofweek)['sentiment_score'].mean().plot(kind='bar')
 plt.title('Average Sentiment by Day of Week')
 plt.xticks(ticks=range(7), labels=['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'], rotation=45)
 plt.xlabel('Day of Week')
-plt.ylabel('Average Sentiment')
-plt.savefig('U:\\DataBase\\Chatgpt convo\\average_sentiment_by_day_of_week_bar_chart.png')
+plt.savefig(os.path.join(path, 'Average Sentiment by Day of Week.png'))
+plt.clf()
 
 
 
@@ -170,30 +177,30 @@ plt.figure(figsize=(10, 5))
 sns.countplot(data=df_sorted, x='create_hour', color='skyblue')
 plt.title('Hourly Distribution of Conversation Creation')
 plt.xlabel('Hour of Day')
-plt.ylabel('Count')
-plt.savefig(os.path.join('U:\\DataBase\\Chatgpt convo', 'create_hour_distribution.png'))
+plt.savefig(os.path.join(path, 'Hourly Distribution of Conversation Creation.png'))
+plt.clf()
 
 # Create word cloud of the words in the 'title' column
 wordcloud = WordCloud(background_color='white').generate(" ".join(words))
 plt.figure(figsize=(10, 5))
 plt.imshow(wordcloud, interpolation='bilinear')
-plt.axis('off')
-plt.savefig('U:\\DataBase\\Chatgpt convo\\wordcloud.png')
+plt.savefig(os.path.join(path, 'wordcloud.png'))
+plt.clf()
 
 most_common_words_df = pd.DataFrame(most_common_words, columns=['Word', 'Frequency'])
 most_common_words_df.plot(kind='bar', x='Word', y='Frequency', legend=False, title='Most common words')
 plt.xlabel('')
 plt.ylabel('Frequency')
 plt.tight_layout()
-plt.savefig('U:\\DataBase\\Chatgpt convo\\most_common_words_bar_chart.png')
-plt.clf()  # Clear the current figure for the next plots
+plt.savefig(os.path.join(path, 'most_common_words_df.png'))
+plt.clf()
 
 df_sorted['create_hour'] = df_sorted.index.hour
 df_sorted['create_hour'].value_counts().plot(kind='pie', autopct='%1.1f%%')
 plt.axis('equal')  # Equal aspect ratio ensures the pie chart is circular
 plt.title('Conversations by hour')
 plt.tight_layout()
-plt.savefig('U:\\DataBase\\Chatgpt convo\\conversations_by_hour_pie_chart.png')
+plt.savefig(os.path.join(path, 'Conversations by hour.png'))
 plt.clf()
 
 df_sorted['num_nodes'].plot(kind='hist', bins=20, rwidth=0.9, color='#607c8e')
@@ -201,22 +208,22 @@ plt.title('Conversation lengths')
 plt.xlabel('Number of nodes')
 plt.ylabel('Frequency')
 plt.tight_layout()
-plt.savefig('U:\\DataBase\\Chatgpt convo\\conversation_lengths_histogram.png')
+plt.savefig(os.path.join(path, 'Conversation lengths.png'))
 plt.clf()
 
-df_sorted['create_time'].value_counts().resample('M').sum().plot(kind='line')
+df_sorted.index.value_counts().resample('M').sum().plot(kind='line')
 plt.title('Conversations over time')
 plt.xlabel('Time')
 plt.ylabel('Number of conversations')
 plt.tight_layout()
-plt.savefig('U:\\DataBase\\Chatgpt convo\\conversations_over_time_line_chart.png')
+plt.savefig(os.path.join(path, 'Conversations over time.png'))
 plt.clf()
 
 df_sorted['num_nodes'].plot(kind='box')
 plt.title('Number of nodes per conversation')
 plt.ylabel('Number of nodes')
 plt.tight_layout()
-plt.savefig('U:\\DataBase\\Chatgpt convo\\nodes_per_conversation_box_plot.png')
+plt.savefig(os.path.join(path, 'Number of nodes per conversation.png'))
 plt.clf()
 
 df_sorted.plot(kind='scatter', x='num_nodes', y='conversation_length')
@@ -224,29 +231,29 @@ plt.title('Conversation length vs. number of nodes')
 plt.xlabel('Number of nodes')
 plt.ylabel('Conversation length')
 plt.tight_layout()
-plt.savefig('U:\\DataBase\\Chatgpt convo\\length_vs_nodes_scatter_plot.png')
+plt.savefig(os.path.join(path, 'Conversation length vs. number of nodes.png'))
 plt.clf()
 
 correlations = df_sorted[['num_nodes', 'conversation_length', 'create_hour']].corr()
 sns.heatmap(correlations, annot=True, cmap='coolwarm')
 plt.title('Heatmap of correlations')
 plt.tight_layout()
-plt.savefig('U:\\DataBase\\Chatgpt convo\\correlations_heatmap.png')
+plt.savefig(os.path.join(path, 'Heatmap of correlations'))
 plt.clf()
 
-df_sorted['create_time'].value_counts().resample('M').sum().plot(kind='area')
+df_sorted.index.value_counts().resample('M').sum().plot(kind='area')
 plt.title('Conversations over time')
 plt.xlabel('Time')
 plt.ylabel('Number of conversations')
 plt.tight_layout()
-plt.savefig('U:\\DataBase\\Chatgpt convo\\conversations_over_time_area_chart.png')
+plt.savefig(os.path.join(path, 'Conversations over time.png'))
 plt.clf()
 
 sns.violinplot(y=df_sorted['num_nodes'])
 plt.title('Conversation lengths')
 plt.ylabel('Number of nodes')
 plt.tight_layout()
-plt.savefig('U:\\DataBase\\Chatgpt convo\\conversation_lengths_violin_plot.png')
+plt.savefig(os.path.join(path, 'Conversation lengths.png'))
 plt.clf()
 
 # Sentiment Analysis Plot
@@ -256,7 +263,7 @@ sns.histplot(df_sorted['sentiment_score'], bins=20, kde=True)
 plt.title('Distribution of Sentiment Scores')
 plt.xlabel('Sentiment Score')
 plt.ylabel('Frequency')
-plt.savefig('U:\\DataBase\\Chatgpt convo\\sentiment_distribution.png')
+plt.savefig(os.path.join(path, 'sentiment_score.png'))
 plt.clf()
 
 print("Detailed analysis completed.")
